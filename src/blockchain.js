@@ -1,3 +1,5 @@
+const CryptoJS = require('crypto-js');
+
 class Block {
     constructor(index, hash, previousHash, timestamp, data) {
         this.index = index;
@@ -10,15 +12,13 @@ class Block {
 
 // genesis block
 
-CryptoJS = require('Crypto-JS');
-
-const genesisBlock = new Block(0, "3D2C66D87F2C5BE4BA9D0A6A4E140E8C6FAB1EE3E49669D331982DE020AD239F", null, new Date.getTime()/1000, "genesis block");
+const genesisBlock = new Block(0, "B651D03544D7875D8037DAC663068300253621AC34F4A4F491DAD589F86F3CEC", null, 1525098635776, "genesis block");
 
 let blockchain = [genesisBlock];
 
 const getBlockchain = () => blockchain;
 const getLastBlock = () => blockchain[blockchain.length - 1];
-const getTimestamp = () => new Date.getTime() / 1000;
+const getTimestamp = () => new Date().getTime() / 1000;
 const createHash = (index, previousHash, timestamp, data) => CryptoJS.SHA256(index + previousHash + timestamp + JSON.stringify(data)).toString();
 
 const createNewBlock = data => {
@@ -27,10 +27,12 @@ const createNewBlock = data => {
     const newTimestamp = getTimestamp();
     const newHash = createHash(newBlockIndex, previousBlock.hash, newTimestamp, data);
     const newBlock = new Block(newBlockIndex, newHash, previousBlock.hash, newTimestamp, data);
+
+    addBlockToChain(newBlock);
     return newBlock;
 };
 
-const getBlockHash = block => createHash(block.index, block,previousHash, block.timestamp, block.data);
+const getBlockHash = block => createHash(block.index, block.previousHash, block.timestamp, block.data);
 
 const isNewBlockValid = (candidateBlock, latestBlock) => {
     if (!isNewStructureValid(candidateBlock)) {
@@ -62,7 +64,9 @@ const isNewStructureValid = block => {
 };
 
 const isChainValid = candidateChain => {
-    const isGenesisValid = block => JSON.stringify(block) === JSON.stringify(genesisBlock);
+    const isGenesisValid = block => {
+        return JSON.stringify(block) === JSON.stringify(genesisBlock);
+    };
     if (!isGenesisValid(candidateChain[0])) {
         // different genesis block. sth's wrong
         return false;
@@ -87,9 +91,14 @@ const replaceChain = candidateChain => {
 
 const addBlockToChain = candidateBlock => {
     if (isNewBlockValid(candidateBlock, getLastBlock())) {
-        getBlockchain().push(candidateChain);
+        blockchain.push(candidateBlock);
         return true;
     } else {
         return false;
     }
 }
+
+module.exports = {
+    getBlockchain,
+    createNewBlock
+};
