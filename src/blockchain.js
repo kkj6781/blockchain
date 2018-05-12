@@ -1,5 +1,10 @@
 const CryptoJS = require('crypto-js'),
+    Wallet = require('./wallet'),
+    Transactions = require('./transactions'),
     hexToBinary = require('hex-to-binary');
+
+const { getBalance, getPublicFromWallet } = Wallet;
+const { createCoinbaseTx, processTxs } = Transactions;
 
 const BLOCK_GENERATION_INTERVAL = 10; // time
 const DIFFICULTY_ADJUSTMENT_INTERVAL = 10; // # of blocks
@@ -22,13 +27,21 @@ const genesisBlock = new Block(0, "B651D03544D7875D8037DAC663068300253621AC34F4A
 
 let blockchain = [genesisBlock];
 
+let uTxOuts = [];
+
 const getBlockchain = () => blockchain;
 const getNewestBlock = () => blockchain[blockchain.length - 1];
 const getTimestamp = () => Math.round(new Date().getTime() / 1000);
 const createHash = (index, previousHash, timestamp, data, difficulty, nonce) => 
     CryptoJS.SHA256(index + previousHash + timestamp + JSON.stringify(data) + difficulty + nonce).toString();
 
-const createNewBlock = data => {
+const createNewBlock = () => {
+    const coinbaseTx = createCoinbaseTx(getPublicFromWallet(), getNewestBlock().index + 1);
+    const blockData = [coinbaseTx];
+    return createNewRawBlock(blockData);
+};
+
+const createNewRawBlock = data => {
     const previousBlock = getNewestBlock();
     const newBlockIndex = previousBlock.index + 1;
     const newTimestamp = getTimestamp();
@@ -71,9 +84,8 @@ const findBlock = (index, previousHash, timestamp, data, difficulty) => {
         // check # of 0's based on difficulty
         if (hashMatchesDifficulty(hash, difficulty)) {
             return new Block(index, hash, previousHash, timestamp, data, difficulty, nonce);
-        } else {
-            nonce++;
         }
+        nonce++;
     }
 };
 
@@ -117,7 +129,7 @@ const isBlockStructureValid = block => {
         typeof block.hash === 'string' &&
         typeof block.previousHash === 'string' &&
         typeof block.timestamp === 'number' &&
-        typeof block.data === 'string'
+        typeof block.data === 'object'
     );
 };
 
@@ -137,9 +149,13 @@ const isChainValid = candidateChain => {
     return true;
 };
 
+const sumDifficulty = anyBlockchain => anyBlockchain.map(block => block.difficulty)
+                                                    .map(diff => Math.pow(2, diff))
+                                                    .reduce((a,b) => a + b);
+
 // extend the chain if blockchain's integrity can remain pure
 const replaceChain = candidateChain => {
-    if (isChainValid(candidateChain) && candidateChain.length > getBlockchain().length) {
+    if (isChainValid(candidateChain) && sumDifficulty(candidateChain) > sumDifficulty(getBlockchain())) {
         blockchain = candidateChain;
         return true;
     } else {
@@ -149,12 +165,20 @@ const replaceChain = candidateChain => {
 
 const addBlockToChain = candidateBlock => {
     if (isBlockValid(candidateBlock, getNewestBlock())) {
-        blockchain.push(candidateBlock);
-        return true;
+        const processedTxs = processTxs(candidateBlock.data, uTxOuts, candidateBlock.index);
+        if (processedTxs === null) {
+            return false;
+        } else {
+            blockchain.push(candidateBlock);
+            uTxOuts = processedTxs;
+            return true;
+        }
     } else {
         return false;
     }
 }
+
+const getAccountBalance = () => getBalance(getPublicFromWallet(), uTxOuts);
 
 module.exports = {
     getBlockchain,
@@ -162,5 +186,6 @@ module.exports = {
     getNewestBlock,
     isBlockStructureValid,
     addBlockToChain,
-    replaceChain
+    replaceChain,
+    getAccountBalance
 };
