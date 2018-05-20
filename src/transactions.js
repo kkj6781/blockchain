@@ -53,8 +53,9 @@ const signTxIn = (tx, txInIndex, privateKey, uTxOutList) => {
     const txIn = tx.txIns[txInIndex];
     const dataToSign = tx.id;
     // find transaction output
-    const referencedUTxOut = findUTxOut(txIn.txOutId, tx.txOutIndex, uTxOutList);
-    if (referencedUTxOut === null) {
+    const referencedUTxOut = findUTxOut(txIn.txOutId, txIn.txOutIndex, uTxOutList);
+    if (referencedUTxOut === null || referencedUTxOut === undefined) {
+        throw Error('could not find the referenced uTxOut. not signing');
         return;
     }
     const referencedAddress = referencedUTxOut.address;
@@ -128,14 +129,14 @@ const isTxStructureValid = tx => {
     if (typeof tx.id !== 'string') {
         console.log('tx id not valid');
         return false;
-    } else if (!(typeof tx.txIns instanceof Array)) {
-        console.log('txins are not an array');
+    } else if (!(tx.txIns instanceof Array)) {
+        console.log('txins is not an array');
         return false;
     } else if (!tx.txIns.map(isTxInStructureValid).reduce((a, b) => a && b, true)) {
         console.log('txins contains at least one invalid structure');
         return false;
-    } else if (!(typeof tx.txOuts instanceof Array)) {
-        console.log('txins are not an array');
+    } else if (!( tx.txOuts instanceof Array)) {
+        console.log('txouts is not an array');
         return false;
     } else if (!tx.txOuts.map(isTxOutStructureValid).reduce((a, b) => a && b, true)) {
         console.log('txouts contains at least one invalid structure');
@@ -147,7 +148,7 @@ const isTxStructureValid = tx => {
 
 const validateTxIn = (txIn, tx, uTxOutList) => {
     const wantedTxOut = uTxOutList.find(uTxO => uTxO.txOutI === txIn.txOutId && uTxO.txOutIndex === txIn.txOutIndex);
-    if (wantedTxOut === null) {
+    if (wantedTxOut === null || wantedTxOut === undefined) {
         return false;
     } else {
         const address = wantedTxOut.address;
@@ -156,7 +157,7 @@ const validateTxIn = (txIn, tx, uTxOutList) => {
     }
 };
 
-const getAmountInTxIn = (txIn, uTxOutList) => findUTxOut(txIn.txOutId, txIn.txOutIndex, tTxOutList).amount;
+const getAmountInTxIn = (txIn, uTxOutList) => findUTxOut(txIn.txOutId, txIn.txOutIndex, uTxOutList).amount;
 
 const validateTx = (tx, uTxOutList) => {
     if (!isTxStructureValid(tx)) {
@@ -256,5 +257,6 @@ module.exports = {
     Transaction,
     TxOut,
     createCoinbaseTx,
-    processTxs
+    processTxs,
+    validateTx
 };

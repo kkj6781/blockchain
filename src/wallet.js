@@ -54,6 +54,7 @@ const findAmountInUTxOuts = (amountNeeded, myUTxOuts) => {
             return { includedUTxOuts, leftOverAmount };
         }
     }
+    throw Error('Not enough funds');
     return false;
 };
 
@@ -63,20 +64,38 @@ const createTxOuts = (receiverAddress, myAddress, amount, leftOverAmount) => {
         return [receiverTxOut]
     } else {
         const leftOverTxOut = new TxOut(myAddress, leftOverAmount);
-        return [receiverTxOut, leftOverAmount]
+        return [receiverTxOut, leftOverTxOut]
     }
 };
 
-const createTx = (receiverAddress, amount, privateKey, uTxOutList) => {
-    const myAddress = getPublicKey(privateKey);
-    const myUTxOuts = uTxOutList.filter(uTxO => uTxO.address === address);
+const filterUTxOutsFromMempool = (uTxOutList, mempool) => {
+    const txIns = _(mempool).map(tx => tx.txIns).flatten().value();
+    const removables = [];
+    for (const uTxOut of uTxOutList) {
+        const txIn = _.find(txIns, txIn => 
+            txIn.txOutIndex === uTxOut.txOutIndex && txIn.txOutId === uTxOut.txOutId
+        );
+        if (txIn !== undefined) {
+            removables.push(uTxOut);
+        }
+    }
+    return _.without(uTxOutList, ...removables);
+    
+};
 
-    const { includedUTxOuts, leftOverAmount } = findAmountInUTxOuts(amount, myUTxOuts);
+const createTx = (receiverAddress, amount, privateKey, uTxOutList, mempool) => {
+    const myAddress = getPublicKey(privateKey);
+    const myUTxOuts = uTxOutList.filter(uTxO => uTxO.address === myAddress);
+
+    const filteredUTxOuts = filterUTxOutsFromMempool(myUTxOuts, mempool);
+
+    const { includedUTxOuts, leftOverAmount } = findAmountInUTxOuts(amount, filteredUTxOuts);
 
     const toUnsignedTxIn = uTxOut => {
         const txIn = new TxIn();
         txIn.txOutId = uTxOut.txOutId;
-        txIn.txOutIndex = uTxOut.txOutIndex; //
+        txIn.txOutIndex = uTxOut.txOutIndex; 
+        return txIn;
     };
 
     const unsignedTxIns = includedUTxOuts.map(toUnsignedTxIn);
@@ -84,6 +103,7 @@ const createTx = (receiverAddress, amount, privateKey, uTxOutList) => {
     const tx = new Transaction();
 
     tx.txIns = unsignedTxIns;
+    
     tx.txOuts = createTxOuts(receiverAddress, myAddress, amount, leftOverAmount);
 
     tx.id = getTxId(tx);
@@ -92,6 +112,7 @@ const createTx = (receiverAddress, amount, privateKey, uTxOutList) => {
         txIn.signature = signTxIn(tx, index, privateKey, uTxOutList);
         return txIn;
     });
+    
     return tx;
 };
 
@@ -99,5 +120,7 @@ const createTx = (receiverAddress, amount, privateKey, uTxOutList) => {
 module.exports = {
     initWallet,
     getBalance,
-    getPublicFromWallet
+    getPublicFromWallet,
+    createTx,
+    getPrivateFromWallet
 };

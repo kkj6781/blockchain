@@ -1,10 +1,13 @@
 const CryptoJS = require('crypto-js'),
+    _ = require('lodash'),
     Wallet = require('./wallet'),
+    Mempool = require('./memPool'),
     Transactions = require('./transactions'),
     hexToBinary = require('hex-to-binary');
 
-const { getBalance, getPublicFromWallet } = Wallet;
+const { getBalance, getPublicFromWallet, createTx, getPrivateFromWallet } = Wallet;
 const { createCoinbaseTx, processTxs } = Transactions;
+const { addToMempool, getMempool } = Mempool;
 
 const BLOCK_GENERATION_INTERVAL = 10; // time
 const DIFFICULTY_ADJUSTMENT_INTERVAL = 10; // # of blocks
@@ -37,7 +40,7 @@ const createHash = (index, previousHash, timestamp, data, difficulty, nonce) =>
 
 const createNewBlock = () => {
     const coinbaseTx = createCoinbaseTx(getPublicFromWallet(), getNewestBlock().index + 1);
-    const blockData = [coinbaseTx];
+    const blockData = [coinbaseTx].concat(getMempool());
     return createNewRawBlock(blockData);
 };
 
@@ -171,6 +174,7 @@ const addBlockToChain = candidateBlock => {
         } else {
             blockchain.push(candidateBlock);
             uTxOuts = processedTxs;
+            console.log(uTxOuts);            
             return true;
         }
     } else {
@@ -178,7 +182,15 @@ const addBlockToChain = candidateBlock => {
     }
 }
 
+const getUTxOutList = () => _.cloneDeep(uTxOuts);
+
 const getAccountBalance = () => getBalance(getPublicFromWallet(), uTxOuts);
+
+const sendTx = (address, amount) => {
+    const tx = createTx(address, amount, getPrivateFromWallet(), getUTxOutList(), getMempool());
+    addToMempool(tx, getUTxOutList());
+    return tx;
+};
 
 module.exports = {
     getBlockchain,
@@ -187,5 +199,6 @@ module.exports = {
     isBlockStructureValid,
     addBlockToChain,
     replaceChain,
-    getAccountBalance
+    getAccountBalance,
+    sendTx
 };
