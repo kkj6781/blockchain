@@ -37,13 +37,12 @@ class UTxOut {
 
 
 const getTxId = tx => {
-    const txInContent = tx.txIns.map(txIn => txIn.uTxOutId + txIn.txOutIndex)
+    const txInContent = tx.txIns.map(txIn => txIn.txOutId + txIn.txOutIndex)
                                 .reduce((a, b) => a + b, '');
     const txOutContent = tx.txOuts.map(txOut => txOut.address + txOut.amount)
                                 .reduce((a, b) => a + b, '');
-    return CryptoJS.SHA256(txInContent + txOutContent).toString();
+    return CryptoJS.SHA256(txInContent + txOutContent + tx.timestamp).toString();
 };
-
 
 const findUTxOut = (txOutId, txOutIndex, uTxOutList) => {
     return uTxOutList.find(uTxO => uTxO.txOutId === txOutId && uTxO.txOutIndex === txOutIndex);
@@ -75,13 +74,17 @@ const updateUTxOuts = (newTxs, uTxOutList) => {
     const newUTxOuts = newTxs
                         .map(tx => tx.txOuts.map((txOut, index) => new UTxOut(tx.id, index, txOut.address, txOut.amount)))
                         .reduce((a, b) => a.concat(b), []);
+    console.log('newUTxOuts ', newUTxOuts);
     const spentTxOuts = newTxs
                         .map(tx => tx.txIns)
                         .reduce((a, b) => a.concat(b), [])
                         .map(txIn => new UTxOut(txIn.txOutId, txIn.txOutIndex, '', 0));
+    console.log('spentTxOuts ', spentTxOuts);   
+    console.log('----', uTxOutList);                     
     const resultingUTxOuts = uTxOutList
                             .filter(uTxO => !findUTxOut(uTxO.txOutId, uTxO.txOutIndex, spentTxOuts))
                             .concat(newUTxOuts);
+    console.log('resultingUTxOuts ', resultingUTxOuts);                            
     return resultingUTxOuts;
 };
 
@@ -147,7 +150,7 @@ const isTxStructureValid = tx => {
 };
 
 const validateTxIn = (txIn, tx, uTxOutList) => {
-    const wantedTxOut = uTxOutList.find(uTxO => uTxO.txOutI === txIn.txOutId && uTxO.txOutIndex === txIn.txOutIndex);
+    const wantedTxOut = uTxOutList.find(uTxO => uTxO.txOutId === txIn.txOutId && uTxO.txOutIndex === txIn.txOutIndex);
     if (wantedTxOut === null || wantedTxOut === undefined) {
         return false;
     } else {
@@ -243,6 +246,7 @@ const validateBlockTxs = (txs, uTxOutList, blockIndex) => {
 };
 
 const processTxs = (txs, uTxOutList, blockIndex) => {
+    console.log('12112', txs, uTxOutList, blockIndex)
     if(!validateBlockTxs(txs, uTxOutList, blockIndex)) {
         return null;
     }

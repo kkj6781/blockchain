@@ -7,7 +7,7 @@ const CryptoJS = require('crypto-js'),
 
 const { getBalance, getPublicFromWallet, createTx, getPrivateFromWallet } = Wallet;
 const { createCoinbaseTx, processTxs } = Transactions;
-const { addToMempool, getMempool } = Mempool;
+const { addToMempool, getMempool, updateMempool } = Mempool;
 
 const BLOCK_GENERATION_INTERVAL = 10; // time
 const DIFFICULTY_ADJUSTMENT_INTERVAL = 10; // # of blocks
@@ -24,13 +24,23 @@ class Block {
     }
 };
 
-// genesis block
+const genesisTx = {
+    txIns: [{ signature: '', txOutId: '', txOutIndex: 0 }],
+    txOuts: [
+      {
+        address:
+          "04f20aec39b4c5f79355c053fdaf30410820400bb83ad93dd8ff16834b555e0f6262efba6ea94a87d3c267b5e6aca433ca89b342ac95c40230349ea4bf9caff1ed",
+        amount: 50
+      }
+    ],
+    id: "ad67c73cd8e98af6db4ac14cc790664a890286d4b06c6da7ef223aef8c281e76"
+};
 
-const genesisBlock = new Block(0, "B651D03544D7875D8037DAC663068300253621AC34F4A4F491DAD589F86F3CEC", null, 1525098636, "genesis block", 0, 0);
+const genesisBlock = new Block(0, "82a3ecd4e76576fccce9999d560a31c7ad1faff4a3f4c6e7507a227781a8537f", '', 1518512316, [genesisTx], 0, 0);
 
 let blockchain = [genesisBlock];
 
-let uTxOuts = [];
+let uTxOuts = processTxs(blockchain[0].data, [], 0);
 
 const getBlockchain = () => blockchain;
 const getNewestBlock = () => blockchain[blockchain.length - 1];
@@ -142,14 +152,22 @@ const isChainValid = candidateChain => {
     };
     if (!isGenesisValid(candidateChain[0])) {
         // different genesis block. sth's wrong
-        return false;
+        return null;
     }
+
+    let foreignUTxOuts = [];
+
     for (let i=1; i < candidateChain.length; i++) {
-        if (!isBlockValid(candidateChain[i], candidateChain[i-1])) {
-            return false;
+        const currentBlock = candidateChain[i];
+        if (i !== 0 && !isBlockValid(currentBlock, candidateChain[i-1])) {
+            return null;
+        }
+        foreignUTxOuts = processTxs(currentBlock.data, foreignUTxOuts, currentBlock.index);
+        if (foreignUTxOuts === null) {
+            return null;
         }
     }
-    return true;
+    return foreignUTxOuts;
 };
 
 const sumDifficulty = anyBlockchain => anyBlockchain.map(block => block.difficulty)
@@ -158,8 +176,13 @@ const sumDifficulty = anyBlockchain => anyBlockchain.map(block => block.difficul
 
 // extend the chain if blockchain's integrity can remain pure
 const replaceChain = candidateChain => {
-    if (isChainValid(candidateChain) && sumDifficulty(candidateChain) > sumDifficulty(getBlockchain())) {
+    const foreignUTxOuts = isChainValid(candidateChain);
+    const validChain = foreignUTxOuts !== null;
+    if (validChain && sumDifficulty(candidateChain) > sumDifficulty(getBlockchain())) {
         blockchain = candidateChain;
+        uTxOuts = foreignUTxOuts;
+        updateMempool(uTxOuts);
+        require('./p2p').broadcastNewBlock();
         return true;
     } else {
         return false;
@@ -168,13 +191,16 @@ const replaceChain = candidateChain => {
 
 const addBlockToChain = candidateBlock => {
     if (isBlockValid(candidateBlock, getNewestBlock())) {
+        console.log('-1', candidateBlock)
         const processedTxs = processTxs(candidateBlock.data, uTxOuts, candidateBlock.index);
+        console.log('-2', processedTxs);
         if (processedTxs === null) {
             return false;
         } else {
             blockchain.push(candidateBlock);
             uTxOuts = processedTxs;
-            console.log(uTxOuts);            
+            console.log('uTxOuts ', uTxOuts);            
+            updateMempool(uTxOuts);
             return true;
         }
     } else {
@@ -188,8 +214,14 @@ const getAccountBalance = () => getBalance(getPublicFromWallet(), uTxOuts);
 
 const sendTx = (address, amount) => {
     const tx = createTx(address, amount, getPrivateFromWallet(), getUTxOutList(), getMempool());
+    console.log(getMempool());
     addToMempool(tx, getUTxOutList());
+    require('./p2p').broadcastMempool();
     return tx;
+};
+
+const handleIncomingTx = (tx) => {
+    addToMempool(tx, getUTxOutList());
 };
 
 module.exports = {
@@ -200,5 +232,7 @@ module.exports = {
     addBlockToChain,
     replaceChain,
     getAccountBalance,
-    sendTx
+    sendTx,
+    handleIncomingTx,
+    getUTxOutList
 };
